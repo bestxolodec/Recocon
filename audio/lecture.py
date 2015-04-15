@@ -5,8 +5,8 @@ import subprocess
 import numpy as np
 import pylab as plt
 from recocon.logger import Logger
-from audio.audio import Audio
-from aduio.audiochunk import AudioChunk
+from recocon.audio.audio import Audio
+from recocon.audio.audiochunk import AudioChunk
 
 class Lecture(Logger):
     """Class that represents the whole lecture object: audio, video, and all

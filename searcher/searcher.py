@@ -1,33 +1,35 @@
+#!/usr/bin/env python
+# encoding: utf-8
 
+# import from top level file logging class
+from logger import Logger
+from time import sleep
+from random import randint
+# import all selenium staff
 try:
     from selenium import webdriver
-    from selenium.common.exceptions import TimeoutException, WebDriverException
-    from selenium.common.exceptions import ElementNotVisibleException
-    from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.common.by import By
-    # available since 2.4.0
-    from selenium.webdriver.support.ui import WebDriverWait
-    # available since 2.26.0
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+except ImportError:
+        raise ImportError('Please consider installation of'
+                          ' a selenium python bindings.')
 
-except ImportError as ie:
-    print(ie)
-    sys.exit('Consider using pip (pip3) to install modules.')
 
-class Searcher(Object):
-    """
-        Class desinged to perform search on search engines
-        and extracts links of results
+def sleep_rand(mi=1, ma=10):
+    sleep(randint(mi, ma))
+
+
+class Searcher(Logger):
+    """ Class desinged to perform search on search engines
+       and extracts links of results
     """
     next_page_selectors = {
         'google': (By.CSS_SELECTOR, 'a#pnnext'),
-        'yandex': (By.CSS_SELECTOR, '.pager__button_kind_next')
+        'yandex': (By.CSS_SELECTOR, '')  # ???
     }
 
     search_results_selectors = {
-        'google':  (By.CSS_SELECTOR, selector),
-        'yandex':  (By.CSS_SELECTOR, selector)
+        'google':  (By.CSS_SELECTOR, "ol li h3>a"),
+        'yandex':  (By.CSS_SELECTOR, "")  # ???
     }
 
     input_field_selectors = {
@@ -41,71 +43,91 @@ class Searcher(Object):
     }
 
     def __init__(self, keyword, engine="google", number_of_links=20):
-        """"
+        """
         Args:
             keyword: string to search
             engine: engine to use
             number_of_links: amount of links we are interesed in
 
-
-        """"
-        assert engine.lower() in search_locations.keys(), (
+        """
+        assert engine.lower() in self.search_locations.keys(), (
             "Engine {} is not supported".format(engine))
+        self.keyword = unicode(keyword.decode('utf-8'))
         self.search_engine = engine
         self.number_of_links = number_of_links
         self.driver = None
         self.links = []
-        pass
-
-
-    def get_links(self):
-        """
-        Returns:
-            List of tuples (l, r), where l - is a link itself (string), and
-            r - is a rank number (position of link l on the engine's serp.
-        """
-        self._get
-        self.driver = self._get_webdriver()
-
-
-
 
     def _get_webdriver(self, driver="chrome"):
         """
         Returns:
             selenium webdriver of specified `driver`
         """
-        pass
+        if driver.lower() == "chrome":
+            self.driver = webdriver.Chrome()
+        else:
+            self.driver = webdriver.Firefox()
 
+    def _start_search(self):
+        """ Initialize search with `self.search_engine`
+        This function prepare webdriver and actially perform query
+        """
+        assert self.search_engine
+        assert self.driver, "No silenium driver is available!"
+        self.driver.get(self.search_locations[self.search_engine])
+        typ, sel = self.input_field_selectors[self.search_engine]
+        search_box = self.driver.find_element(by=typ, value=sel)
+        search_box.send_keys(self.keyword)
+        sleep_rand()
+        # for debug purposes:
+        """
+        service_log_path = "{}/chromedriver.log".format("/home/ipaulo/search")
+        service_args = ['--verbose']
+        driver = webdriver.Chrome('/home/ipaulo/search/env/bin/chromedriver',
+                                   service_args=service_args,
+                                   service_log_path=service_log_path)
+        """
 
+    def _get_links_from_current_page(self, shift=1):
+        assert self.driver, "No silenium driver is available!"
+        typ, sel = self.search_results_selectors[self.search_engine]
+        els = self.driver.find_elements(by=typ, value=sel)
+        self.links.extend([(shift+i+1, e.get_attribute("href"), e.text)
+                           for i, e in enumerate(els)])
 
+    def _go_to_next_page(self):
+        assert self.driver, "No silenium driver is available!"
+        # get type of selector and selector itself
+        typ, sel = self.next_page_selectors[self.search_engine]
+        nxt = self.driver.find_element(by=typ, value=sel)
+        self.driver.get(nxt.get_attribute("href"))
 
-class Topic :
-
-
-
-
-service_log_path = "{}/chromedriver.log".format("/home/ipaulo/search")
-service_args = ['--verbose']
-driver = webdriver.Chrome('/home/ipaulo/search/env/bin/chromedriver',
-                          service_args=service_args,
-                          service_log_path=service_log_path)
-# driver = webdriver.Chrome('/home/ipaulo/search/env/bin/chromedriver')
-driver.get('http://www.google.com/xhtml');
-search_box = driver.find_element_by_name('q')
-search_box.send_keys('ChromeDriver')
-search_box.submit()
-time.sleep(5) # Let the user actually see something!
-search_box = driver.find_element_by_name('q')
-search_box.send_keys('ChromeDriver')
-time.sleep(2)
-search_box.submit()
-els = driver.find_elements_by_css_selector("ol li h3>a")
-for e in els:
-    e.text
-    e.get_attribute("href")
-
-e = driver.jfind_element_by_css_selector("a#pnnext")
-
-
-
+    def get_links(self):
+        """
+        Returns:
+            List of tuples (r, l, d), where l - is a link itself (string),
+            r - is a rank number (position of link l on the engine's serp,
+            d - description of a link
+        """
+        self._get_webdriver()
+        self.log.debug("Webdriver registered: %r" % self.driver)
+        self._start_search()
+        page = 1
+        while True:
+            self._get_links_from_current_page(shift=len(self.links))
+            # if we have sufficient number of links
+            if len(self.links) >= self.number_of_links:
+                break
+            self.log.debug("Already have {curlinks} links. That is less then"
+                           " required {reqlinks}, so moving from {cur} page to "
+                           "page {next}.".format(curlinks=len(self.links),
+                                                 reqlinks=self.number_of_links,
+                                                 cur=page, next=page+1))
+            sleep_rand()
+            self._go_to_next_page()
+            page += 1
+        # cut out only those of links that are needed
+        links = self.links[:self.number_of_links]
+        self.log.debug("All grabbed links: \n {!r}"
+                       "".format(links))
+        return links
