@@ -10,6 +10,15 @@ from nltk.tokenize import RegexpTokenizer
 from logger import Logger
 import pickle
 import os
+from gensim import corpora
+# , models, similarities
+from bs4 import UnicodeDammit
+
+
+class ParsingErorr(Exception):
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(ParsingErorr, self).__init__(message)
 
 
 class Token(Logger):
@@ -50,7 +59,7 @@ class Token(Logger):
         return self.stemmer.stem(word)
 
 
-class Link(Logger):
+class Page(Logger):
 
     """
     This class is designed to store all information about particular link,
@@ -58,6 +67,15 @@ class Link(Logger):
     We undoubdetly assume that page downloaded from a link entirely
     fits into memory.
     """
+
+    # init all initial variables
+    rate = None
+    url = None
+    descr = None
+    tokenizer = None
+    html = None
+    text = None
+    tokens = None
 
     def __init__(self, link, engine="google", tokenizer=None):
         """
@@ -68,14 +86,11 @@ class Link(Logger):
                 the following way: `tokenizer.tokenize(text)`, where text is
                 string to be tokenized.
         """
+        self.log.debug("{!r}".format(link))
         assert isinstance(link, tuple), "Wrong link format!"
         assert len(link) == 3, "Improper length of link tuple!"
         self.rate, self.url, self.descr = link
         self.tokenizer = tokenizer or self._get_tokenizer()
-        # init all initial variables
-        self.html = None
-        self.text = None
-        self.tokens = None
 
     def get_list_of_tokens(self):
         """ This function retrieves text from url and prepares it for
@@ -85,44 +100,69 @@ class Link(Logger):
         Returns:
             list of tokens in a sequence they have appeared in text
         """
-        assert self.url
-        self.html = self._get_page_content(self.url)
-        self.text = self._clean_from_html(self.html)
-        self.tokens = self._tokenize(self.text)
+        if not self.tokens:
+            assert self.url, "Wrong url provided!"
+            self.text = self._get_text()
+            self.log.debug(u"First 100 characters of text from {url}: {text}"
+                           "".format(url=self.url,
+                                     text=self.text[:100]))
+            self.tokens = self._get_tokens()
+            self.log.debug(u"First 100 tokens of text from {url}: {tokens}"
+                           "".format(url=self.url,
+                                     tokens=self.tokens[:100]))
+        return self.tokens
 
-    @staticmethod
-    def _get_page_content(url):
-        """ Performs request and return raw result in a strint from
-
-        Args:
-            url (string): url of a page to get
-
-        Returns:
-            raw html string, which contains all the page at once
-        """
-        raw = requests.get(url)
-        return raw.text
-
-    @staticmethod
-    def _clean_from_html(text, remove_newlines=False):
-        """ Cleans all html from string `text`.
+    def _get_text(self, remove_newlines=False):
+        """ Retrieves html with provided url and parses it to fully remove
+        all html tags, style declarations and scripts.
 
         Args:
-            text (string): actual string  that contains html code in it
             remove_newlines (bool): wheter perform cleaning of a \n\r
                 sequencies or not.
 
         Returns:
-            cleaned text
+            unicode object of the whole text without html tags
+
         """
-        assert isinstance(text, str)
-        root = lxml.html.fromstring(text)
-        # ignore alltogether javascript and inline css code
-        lxml.etree.strip_elements(root, lxml.etree.Comment, "script", "style")
-        text = lxml.html.tostring(root, method="text", encoding=unicode)
-        # FIXME: decide if cleaning text is necessary for the next steps
-        if remove_newlines:
-            text = re.sub('\s+', ' ', text)
+        if not self.text:
+            url = self.url
+            try:
+                self.log.debug("Try to get content from page {}".format(url))
+                r = requests.get(url)
+            except requests.exceptions.RequestException as e:
+                self.log.warn("Unable to get page content of the url: {url}. "
+                              "The reason: {exc!r}".format(url=url, exc=e))
+                raise ParsingErorr(e.message)
+
+            ud = UnicodeDammit(r.content, is_html=True)
+            # if page contains any characters that differ from the main
+            # encodin we will ignore them
+            content = ud.unicode_markup.encode(ud.original_encoding, "ignore")
+            root = lxml.html.fromstring(content)
+            lxml.html.etree.strip_elements(root, lxml.etree.Comment,
+                                           "script", "style")
+            text = lxml.html.tostring(root, method="text", encoding=unicode)
+            if remove_newlines:
+                text = re.sub('\s+', ' ', text)
+            self.text = text
+        return self.text
+
+    def _get_tokens(self):
+        """ Split text and filter it from rare words and stopwords
+
+        Args:
+            text (str): text to split
+
+        Returns: FIXME:
+            list of string tokens
+            list of `Token` objects with sequence of words preserved
+        """
+        if not self.tokens:
+            text = self._get_text()
+            self.tokens = self.tokenizer.tokenize(text)
+        return self.tokens
+        # FIXME: try with stemming all words before lda results
+        return [Token(t) for t in self.tokenizer.tokenize(text)]
 
     @staticmethod
     def _get_tokenizer():
@@ -133,21 +173,8 @@ class Link(Logger):
         Returns:
             tokenizer with method `tokenize`.
         """
-        return RegexpTokenizer(r'\w+')
-
-    def _tokenize(self, text):
-        """ Split text and filter it from rare words and stopwords
-
-        Args:
-            text (str): text to split
-
-        Returns: FIXME:
-            list of string tokens
-            list of `Token` objects with sequence of words preserved
-        """
-        return self.tokenizer.tokenize(text)
-        # FIXME: try with stemming all words before lda results
-        return [Token(t) for t in self.tokenizer.tokenize(text)]
+        # only alpha words
+        return RegexpTokenizer(r'[^a-zA-Z_]+')
 
     def _text_to_disk(self, folder=None, filename=None, text=None):
         """ Stores text of a link to file in folder `folder` and filename
@@ -187,19 +214,123 @@ class Link(Logger):
             pickle.dump(tokens, f)
             self.log.debug("Written tokens to file {}".format(filepath))
 
+    def _tokens_from_disk(self, filepath=None):
+        """ Get tokens from disk.
+
+        Kwargs:
+            filename (str): filename to read tokens from
+
+        Returns:
+            list of tags
+        """
+        assert filepath and isinstance(filepath, str)
+        with open(filepath, 'rb') as f:
+            self.tokens = pickle.load(f)
+        return self.tokens
+
+
+class Collection(Logger):
+
+    """ This class manages many separate pages and treats them as distinct
+    texts. Theese texts all together form an object which is called Collection.
+    """
+
+    pages = None
+    texts = None
+    dictionary = None
+    # sparse vector of features
+    corpus = None
+
+    # FIXME: decide how to init instance if we restore texts from file
+    def __init__(self, linklist, pages=None, texts=None):
+        """ Inits all pages found in linklist.
+
+        Args:
+            linklist (list of lists of strings): list of links tuples
+            pages (list of Pages objects): list of Pages objects
+            texts (list of lists of tokens): of each document
+        """
+        assert isinstance(linklist, list) and len(linklist) > 1, (
+            "Not enough links to proceed!")
+        self.linklist = linklist
+
+    def get_tokenized_texts(self):
+        """ Extracts tokens from text. Forms and returns list of lists of
+        tokens for each documents.
+        This method need to downlaod all links in a sequental oreder, so
+        it could take a while to wait for it.
+
+        Returns:
+            list of lists of tokens from each page
+        """
+        # init pages for each url
+        if not self.texts:
+            self.pages = []
+            for l in self.linklist:
+                self.pages.append(Page(l))
+            # form texts
+            self.texts = []
+            for p in self.pages:
+                # catch all excetptions of pages that we cannot parse
+                try:
+                    tokens = p.get_list_of_tokens()
+                except ParsingErorr:
+                    self.log.warn(u"Failed to get tokens from text of url "
+                                  "{url}. Skipping it.".format(url=p.url))
+                    continue
+                self.texts.append(tokens)
+
+            # self.texts = [p.get_list_of_tokens() for p in self.pages]
+        return self.texts
+
+    def get_dictionary(self):
+        """ Returns gensim dictionary.
+        Returns:
+            gensim dictionary
+        """
+        texts = self.get_tokenized_texts()
+        if not self.dictionary:
+            self.dictionary = corpora.Dictionary(texts)
+        return self.dictionary
+
+    def get_corpus(self):
+        """TODO: Docstring for get_corpus.
+        Returns: TODO
+
+        """
+        texts = self.get_tokenized_texts()
+        if not self.corpus:
+            dictionary = self.get_dictionary()
+            self.corpus = [dictionary.doc2bow(text) for text in texts]
+        return self.corpus
+
+    def save_corpus_and_dictionary(self, dirname):
+        """ save to dirname/corpus.mm and dirname/dictionary.dict """
+        corpfilename = os.path.join(dirname, "corpus.mm")
+        dictfilename = os.path.join(dirname, "dictionary.dict")
+        corpora.MmCorpus.serialize(corpfilename, self.get_corpus())
+        self.get(self.get_dictionary()).save(dictfilename)
+
+    def load_corpus_and_dictionary(self, dirname):
+        """ Restore saved corpus and dictionary.
+        Load from dirname/corpus.mm and dirname/dictionary.dict """
+        corpfilename = os.path.join(dirname, "corpus.mm")
+        dictfilename = os.path.join(dirname, "dictionary.dict")
+        assert os.path.isfile(corpfilename), "Error loading corpus!"
+        assert os.path.isfile(dictfilename), "Error loading dictionary!"
+        self.dictionary = corpora.Dictionary.load(dictfilename)
+        self.corpus = corpora.MmCorpus(corpfilename)
 
 
 if __name__ == '__main__':
+    import logging
+    logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
+                        level=logging.DEBUG)
     with open('./links.dump', 'rb') as f:
         links = pickle.load(f)
-    Links = []
-
-    for l in link:
-
-
-
-
-
+    col = Collection(links)
+    dictionary = col.get_dictionary()
+    corpus = col.get_corpus()
 
 """
 with open("./file", "w") as f:
@@ -217,3 +348,55 @@ with open("links.dump", 'rb') as f:
     import pickle
     a = pickle.load(f)
 """
+
+'''
+DEPRECATED, but maybe useful
+def _get_html(self, url):
+    """ Performs request and return raw result in a strint from
+
+    Args:
+        url (string): url of a page to get
+
+    Returns:
+        raw html string, which contains all the page at once. Resulted html
+        page is an unicode object.
+        Returns `None` if some erors occured while making request. For
+        such an issues look to `WARN` level in logs.
+    """
+    self.log.debug("Try to get content from page {}".format(url))
+    html = None
+    try:
+        r = requests.get(url)
+        ud = UnicodeDammit(r.content, is_html=True)
+        html = ud.unicode_markup
+    except requests.exceptions.RequestException as e:
+        self.log.warn("Unable to get page content of the url: {url}. "
+                        "The reason: {exc!r}".format(url=url, exc=e))
+        raise ParsingErorr(e.message)
+    return html
+
+@staticmethod
+def _get_text_from_html(text, remove_newlines=False):
+    """ Cleans all html from string `text`.
+
+    Args:
+        text (string): actual string  that contains html code in it
+        remove_newlines (bool): wheter perform cleaning of a \n\r
+            sequencies or not.
+
+    Returns:
+        cleaned text (an unicode object)
+    """
+    assert isinstance(text, basestring)
+    # encode unicode string before parsing it to lxml
+    text = text.encode("utf-8")
+    root = lxml.html.fromstring(text, encoding="utf-8")
+    # ignore alltogether javascript and inline css code
+    lxml.etree.strip_elements(root, lxml.etree.Comment, "script", "style")
+    text = lxml.html.tostring(root, method="text", encoding=unicode)
+    # FIXME: decide if cleaning text is necessary for the next steps
+    if remove_newlines:
+        text = re.sub('\s+', ' ', text)
+    return text
+
+'''
