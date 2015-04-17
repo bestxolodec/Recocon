@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-import lxml.etree
-import lxml.html
+from lxml import html
+from lxml.html import etree
 import requests
 import re
 from nltk.stem import SnowballStemmer
@@ -13,12 +13,18 @@ import os
 from gensim import corpora
 # , models, similarities
 from bs4 import UnicodeDammit
+import chardet
 
 
-class ParsingErorr(Exception):
+# if less then this threshold then use encoding, declared in html
+# in case that chardet has commited an error in auto detection of charset
+THRESHOLD_OF_CHARDETECT = 0.7
+
+
+class ParsingError(Exception):
     def __init__(self, message):
         # Call the base class constructor with the parameters it needs
-        super(ParsingErorr, self).__init__(message)
+        super(ParsingError, self).__init__(message)
 
 
 class Token(Logger):
@@ -102,14 +108,14 @@ class Page(Logger):
         """
         if not self.tokens:
             assert self.url, "Wrong url provided!"
-            self.text = self._get_text()
+            self.text = self._get_text(remove_newlines=True)
             self.log.debug(u"First 100 characters of text from {url}: {text}"
                            "".format(url=self.url,
                                      text=self.text[:100]))
             self.tokens = self._get_tokens()
             self.log.debug(u"First 100 tokens of text from {url}: {tokens}"
                            "".format(url=self.url,
-                                     tokens=self.tokens[:100]))
+                                     tokens=self.tokens))
         return self.tokens
 
     def _get_text(self, remove_newlines=False):
@@ -132,22 +138,36 @@ class Page(Logger):
             except requests.exceptions.RequestException as e:
                 self.log.warn("Unable to get page content of the url: {url}. "
                               "The reason: {exc!r}".format(url=url, exc=e))
-                raise ParsingErorr(e.message)
+                raise ParsingError(e.message)
 
             ud = UnicodeDammit(r.content, is_html=True)
+
+            enc = ud.original_encoding.lower()
+            declared_enc = ud.declared_html_encoding
+            if declared_enc:
+                declared_enc = declared_enc.lower()
+            # possible misregocnition of an encoding
+            if (declared_enc and enc != declared_enc):
+                detect_dict = chardet.detect(r.content)
+                det_conf = detect_dict["confidence"]
+                det_enc = detect_dict["encoding"].lower()
+                if enc == det_enc and det_conf < THRESHOLD_OF_CHARDETECT:
+                    enc = declared_enc
+            print "CHOOSED ENCODING: {}".format(enc)
             # if page contains any characters that differ from the main
             # encodin we will ignore them
-            content = ud.unicode_markup.encode(ud.original_encoding, "ignore")
-            root = lxml.html.fromstring(content)
-            lxml.html.etree.strip_elements(root, lxml.etree.Comment,
-                                           "script", "style")
-            text = lxml.html.tostring(root, method="text", encoding=unicode)
+            content = r.content.decode(enc, "ignore").encode(enc)
+            htmlparser = etree.HTMLParser(encoding=enc)
+            root = etree.HTML(content, parser=htmlparser)
+            etree.strip_elements(root, html.etree.Comment, "script", "style")
+            text = html.tostring(root, method="text", encoding=unicode)
+
             if remove_newlines:
                 text = re.sub('\s+', ' ', text)
             self.text = text
         return self.text
 
-    def _get_tokens(self):
+    def _get_tokens(self, remove_stopwords=True, min_wordlength=2):
         """ Split text and filter it from rare words and stopwords
 
         Args:
@@ -159,7 +179,12 @@ class Page(Logger):
         """
         if not self.tokens:
             text = self._get_text()
-            self.tokens = self.tokenizer.tokenize(text)
+            tokens = self.tokenizer.tokenize(text)
+            if remove_stopwords:
+                pass
+            if min_wordlength:
+                pass
+            self.tokens = tokens
         return self.tokens
         # FIXME: try with stemming all words before lda results
         return [Token(t) for t in self.tokenizer.tokenize(text)]
@@ -274,7 +299,7 @@ class Collection(Logger):
                 # catch all excetptions of pages that we cannot parse
                 try:
                     tokens = p.get_list_of_tokens()
-                except ParsingErorr:
+                except ParsingError:
                     self.log.warn(u"Failed to get tokens from text of url "
                                   "{url}. Skipping it.".format(url=p.url))
                     continue
@@ -341,9 +366,6 @@ with open("./file", "w") as f:
 # dump all links to files (for testing purposes)
 for l in links:
 
-
-
-
 with open("links.dump", 'rb') as f:
     import pickle
     a = pickle.load(f)
@@ -372,7 +394,7 @@ def _get_html(self, url):
     except requests.exceptions.RequestException as e:
         self.log.warn("Unable to get page content of the url: {url}. "
                         "The reason: {exc!r}".format(url=url, exc=e))
-        raise ParsingErorr(e.message)
+        raise ParsingError(e.message)
     return html
 
 @staticmethod
