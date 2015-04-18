@@ -7,6 +7,7 @@ import requests
 import re
 from nltk.stem import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
+from nltk.corpus import stopwords
 from logger import Logger
 import pickle
 import os
@@ -14,6 +15,10 @@ from gensim import corpora
 # , models, similarities
 from bs4 import UnicodeDammit
 import chardet
+import pymorphy2
+
+# plist = morph.parse(u'стали')
+# morph = pymorphy2.MorphAnalyzer()
 
 
 # if less then this threshold then use encoding, declared in html
@@ -82,8 +87,14 @@ class Page(Logger):
     html = None
     text = None
     tokens = None
+    lemmatize = False
+    # morpheme analizer for lemmatizing purposes
+    morph = None
+    # while lemmatizing, preserve only theese parts of speech
+    allowed_POS = ["NOUN", "VERB", "INFN", "ADJF", "ADJS", "ADVB"]
 
-    def __init__(self, link, engine="google", tokenizer=None):
+    def __init__(self, url, rate=None, descr=None, engine="google",
+                 tokenizer=None, lemmatize=False):
         """
         Args:
             link: typle of (rate, url, description) of a link
@@ -92,13 +103,17 @@ class Page(Logger):
                 the following way: `tokenizer.tokenize(text)`, where text is
                 string to be tokenized.
         """
-        self.log.debug("{!r}".format(link))
-        assert isinstance(link, tuple), "Wrong link format!"
-        assert len(link) == 3, "Improper length of link tuple!"
-        self.rate, self.url, self.descr = link
+        self.log.debug("Url is {!r}".format(url))
+        assert url, "Url cannot be empty!"
+        self.rate = rate
+        self.url = url
+        self.descr = descr
         self.tokenizer = tokenizer or self._get_tokenizer()
+        self.lemmatize = self.lemmatize
+        if self.lemmatize:
+            self.morph = pymorphy2.MorphAnalyzer()
 
-    def get_list_of_tokens(self):
+    def get_list_of_tokens(self, to_lower=True):
         """ This function retrieves text from url and prepares it for
         further processing: clean from html tags, nonalpha characters,
         stopwords.
@@ -116,9 +131,12 @@ class Page(Logger):
             self.log.debug(u"First 100 tokens of text from {url}: {tokens}"
                            "".format(url=self.url,
                                      tokens=self.tokens))
+            if to_lower:
+                # all words to lowercase
+                self.tokens = map(lambda s: s.lower(), self.tokens)
         return self.tokens
 
-    def _get_text(self, remove_newlines=False):
+    def _get_text(self, remove_newlines=True):
         """ Retrieves html with provided url and parses it to fully remove
         all html tags, style declarations and scripts.
 
@@ -153,7 +171,6 @@ class Page(Logger):
                 det_enc = detect_dict["encoding"].lower()
                 if enc == det_enc and det_conf < THRESHOLD_OF_CHARDETECT:
                     enc = declared_enc
-            print "CHOOSED ENCODING: {}".format(enc)
             # if page contains any characters that differ from the main
             # encodin we will ignore them
             content = r.content.decode(enc, "ignore").encode(enc)
@@ -167,7 +184,8 @@ class Page(Logger):
             self.text = text
         return self.text
 
-    def _get_tokens(self, remove_stopwords=True, min_wordlength=2):
+    def _get_tokens(self, remove_stopwords=True, remove_words_with_ascii=True,
+                    min_wordlength=2, stopword_lang="russian"):
         """ Split text and filter it from rare words and stopwords
 
         Args:
@@ -180,17 +198,42 @@ class Page(Logger):
         if not self.tokens:
             text = self._get_text()
             tokens = self.tokenizer.tokenize(text)
-            if remove_stopwords:
-                pass
+            # FIXME: learn how to print unicode lists in logging mudule so
+            # as they are in readable form
+
+            # filter by minimal length of a word
             if min_wordlength:
-                pass
+                with_shortw = filter(lambda s: len(s) <= 2, tokens)
+                tokens = filter(lambda s: len(s) > 2, tokens)
+            # filter by stopwords
+            if remove_stopwords:
+                sw = stopwords.words(stopword_lang)
+                with_sw = filter(lambda s: s in sw, tokens)
+                tokens = filter(lambda s: s not in sw, tokens)
+            # remove words that contains ascii symbols
+            if remove_words_with_ascii:
+                # TODO: decide where is the right place to compile regex
+                ASCII_RE = "[\x00-\x7F]"
+                filterre = re.compile(ASCII_RE, re.UNICODE)
+                with_ascii = filter(lambda s: bool(filterre.search(s)), tokens)
+                tokens = filter(lambda s: not bool(filterre.search(s)), tokens)
+            if self.lemmatize:
+                lemm_tokens = []
+                for t in tokens:
+                    # [0] stands for the most probable lemma
+                    p = self.morph.parse(t)[0]
+                    # only some of the POS are allowed
+                    if p.tag.POS not in self.allowed_POS:
+                        continue
+                    lemm_tokens.append(p.normal_form)
+                tokens = lemm_tokens
             self.tokens = tokens
         return self.tokens
         # FIXME: try with stemming all words before lda results
         return [Token(t) for t in self.tokenizer.tokenize(text)]
 
     @staticmethod
-    def _get_tokenizer():
+    def _get_tokenizer(regexp="[^\W\d_]+"):
         """ function returns default tonekinzer which is set with help of
         `nltk` library. Default tokenizer is simple regexp tokenizer, which
         cares only about '\w+' tokens.
@@ -198,8 +241,8 @@ class Page(Logger):
         Returns:
             tokenizer with method `tokenize`.
         """
-        # only alpha words
-        return RegexpTokenizer(r'[^a-zA-Z_]+')
+        # only alpha words words are captured while using default tokenizer
+        return RegexpTokenizer(regexp)
 
     def _text_to_disk(self, folder=None, filename=None, text=None):
         """ Stores text of a link to file in folder `folder` and filename
@@ -267,19 +310,19 @@ class Collection(Logger):
     corpus = None
 
     # FIXME: decide how to init instance if we restore texts from file
-    def __init__(self, linklist, pages=None, texts=None):
-        """ Inits all pages found in linklist.
+    def __init__(self, urls, pages=None, texts=None):
+        """ Inits all pages found in `urls`.
 
         Args:
-            linklist (list of lists of strings): list of links tuples
+            urls (list of strings): list of urls
             pages (list of Pages objects): list of Pages objects
             texts (list of lists of tokens): of each document
         """
-        assert isinstance(linklist, list) and len(linklist) > 1, (
+        assert isinstance(urls, list) and len(urls) > 1, (
             "Not enough links to proceed!")
-        self.linklist = linklist
+        self.urls = urls
 
-    def get_tokenized_texts(self):
+    def get_tokenized_texts(self, to_lower=True):
         """ Extracts tokens from text. Forms and returns list of lists of
         tokens for each documents.
         This method need to downlaod all links in a sequental oreder, so
@@ -291,14 +334,15 @@ class Collection(Logger):
         # init pages for each url
         if not self.texts:
             self.pages = []
-            for l in self.linklist:
-                self.pages.append(Page(l))
+            # for rate,  url, description
+            for u in self.urls:
+                self.pages.append(Page(u))
             # form texts
             self.texts = []
             for p in self.pages:
                 # catch all excetptions of pages that we cannot parse
                 try:
-                    tokens = p.get_list_of_tokens()
+                    tokens = p.get_list_of_tokens(to_lower=to_lower)
                 except ParsingError:
                     self.log.warn(u"Failed to get tokens from text of url "
                                   "{url}. Skipping it.".format(url=p.url))
@@ -346,6 +390,16 @@ class Collection(Logger):
         self.dictionary = corpora.Dictionary.load(dictfilename)
         self.corpus = corpora.MmCorpus(corpfilename)
 
+    def function(self, arg1):
+        """TODO: Docstring for function.
+
+        Args:
+            arg1 (TODO): TODO
+
+        Returns: TODO
+
+        """
+        pass
 
 if __name__ == '__main__':
     import logging
