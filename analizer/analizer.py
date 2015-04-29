@@ -172,12 +172,12 @@ class Page(Logger):
                 if enc == det_enc and det_conf < THRESHOLD_OF_CHARDETECT:
                     enc = declared_enc
             # if page contains any characters that differ from the main
-            # encodin we will ignore them
+            # encoding we will ignore them
             content = r.content.decode(enc, "ignore").encode(enc)
             htmlparser = etree.HTMLParser(encoding=enc)
             root = etree.HTML(content, parser=htmlparser)
             etree.strip_elements(root, html.etree.Comment, "script", "style")
-            text = html.tostring(root, method="text", encoding=unicode)
+            text = html.tostring(root, method="text", encoding="utf-8")
 
             if remove_newlines:
                 text = re.sub('\s+', ' ', text)

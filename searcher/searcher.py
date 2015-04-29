@@ -14,7 +14,7 @@ except ImportError:
                           ' a selenium python bindings.')
 
 
-def sleep_rand(mi=1, ma=10):
+def sleep_rand(mi=1, ma=3):
     sleep(randint(mi, ma))
 
 
@@ -52,7 +52,8 @@ class Searcher(Logger):
         """
         assert engine.lower() in self.search_locations.keys(), (
             "Engine {} is not supported".format(engine))
-        self.keyword = unicode(keyword.decode('utf-8'))
+        # self.keyword = unicode(keyword.decode('utf-8'))
+        self.keyword = keyword
         self.search_engine = engine
         self.number_of_links = number_of_links
         self.driver = None
@@ -102,13 +103,15 @@ class Searcher(Logger):
         nxt = self.driver.find_element(by=typ, value=sel)
         self.driver.get(nxt.get_attribute("href"))
 
-    def get_links(self):
+    def get_links(self, number_of_links=None):
         """
         Returns:
             List of tuples (r, l, d), where l - is a link itself (string),
             r - is a rank number (position of link l on the engine's serp,
             d - description of a link
         """
+        if number_of_links:
+            self.number_of_links = number_of_links
         self._get_webdriver()
         self.log.debug("Webdriver registered: %r" % self.driver)
         self._start_search()
@@ -131,3 +134,4 @@ class Searcher(Logger):
         self.log.debug("All grabbed links: \n {!r}"
                        "".format(links))
         return links
+
