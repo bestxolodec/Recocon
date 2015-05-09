@@ -1,12 +1,15 @@
-#!/usr/bin/python
-from __future__ import division
+#!/usr/bin/env python
+# encoding: utf-8
+
 import os
 import subprocess
 import numpy as np
-import pylab as plt
+import matplotlib.pyplot as plt
+
 from recocon.logger import Logger
 from recocon.audio.audio import Audio
 from recocon.audio.audiochunk import AudioChunk
+
 
 class Lecture(Logger):
     """Class that represents the whole lecture object: audio, video, and all
@@ -134,7 +137,7 @@ class Lecture(Logger):
         # `n_of_startsilence_samples` even if there are some.
         #
         # if this frames contains only zeros (appears only if audio was
-        # extrnally precessed with audio software)
+        # extrnally processed with audio software beforehand)
         min_energy = None
         min_freq = None
         min_spectr = None
@@ -154,8 +157,8 @@ class Lecture(Logger):
             sample = Audio(framerate=self.audio.framerate, signal=sample)
 
         # NOTE: supposing some of the first 30 non-zer samples are silence
-        for sample_number in xrange(sample_number,
-                                    sample_number + n_of_startsilence_samples):
+        for sample_number in range(sample_number,
+                                   sample_number + n_of_startsilence_samples):
             sample = self.audio.signal[frames_per_sample * sample_number:
                                        frames_per_sample * (sample_number + 1)]
             sample = Audio(framerate=self.audio.framerate, signal=sample)
@@ -171,11 +174,11 @@ class Lecture(Logger):
                                            min_freq] if i is not None)
                 min_spectr = min(i for i in [sample.get_spectral_flatness(),
                                              min_spectr] if i is not None)
-                self.log.info("Processing sample_number {}. Start: {}. End: {}"
-                              "".format(sample_number,
-                                        frames_per_sample * sample_number,
-                                        frames_per_sample *
-                                        (sample_number + 1)))
+                self.log.debug("Processing sample_number {}. Start: {}. End: {}"
+                               "".format(sample_number,
+                                         frames_per_sample * sample_number,
+                                         frames_per_sample *
+                                         (sample_number + 1)))
                 self.log.debug("First silence samples: Min energy: {}."
                                " Min freq: {}. Min spectr: {}"
                                "".format(min_energy, min_freq, min_spectr))
@@ -198,8 +201,8 @@ class Lecture(Logger):
         thr_spectr = spectr_threshold
 
         silence_in_a_row = n_of_startsilence_samples
-        for sample_number in xrange(n_of_startsilence_samples,
-                                    number_of_samples):
+        for sample_number in range(n_of_startsilence_samples,
+                                   number_of_samples):
             # set counter of speech presence to 0 if this counter exceeds 1,
             # we assume that this sample is speech sample
             counter = 0
@@ -213,10 +216,10 @@ class Lecture(Logger):
             plt_spectr[sample_number] = sample.get_spectral_flatness()
             if sample.get_energy() < energy_threshold_of_signal_presence:
                 continue
-            self.log.info("Processing sample_number {}. Start: {}. End: {}"
-                          "".format(sample_number,
-                                    frames_per_sample * sample_number,
-                                    frames_per_sample * (sample_number + 1)))
+            self.log.debug("Processing sample_number {}. Start: {}. End: {}"
+                           "".format(sample_number,
+                                     frames_per_sample * sample_number,
+                                     frames_per_sample * (sample_number + 1)))
             self.log.debug("Current energy: {} Current freq: {} "
                            "Current spectral flatness: {}"
                            "".format(sample.get_energy(),
@@ -226,20 +229,20 @@ class Lecture(Logger):
                            " ?? threshold: %r", sample.get_energy(),
                            min_energy, thr_energy)
             if sample.get_energy() - min_energy >= thr_energy:
-                self.log.info("Energy of a sample is higher then silence!")
+                self.log.debug("Energy of a sample is higher then silence!")
                 energy_decision[sample_number] = True
                 counter += 1
             if sample.get_dominant_freq() - min_freq >= thr_freq:
-                self.log.info("Dominant frequency of a sample is higher "
-                              "then silence!")
+                self.log.debug("Dominant frequency of a sample is higher "
+                               "then silence!")
                 frequency_decision[sample_number] = True
                 counter += 1
             # do not check spectral flatness if we have two distinct evidences
             # if counter != 2 and (sample.get_spectral_flatness() - min_spectr
             #                     >= thr_spectr):
             if (sample.get_spectral_flatness() - min_spectr >= thr_spectr):
-                self.log.info("Spectral flatness is higher then that "
-                              "of a silence sample!")
+                self.log.debug("Spectral flatness is higher then that "
+                               "of a silence sample!")
                 spectr_decision[sample_number] = True
                 counter += 1
             if counter < 2:
@@ -504,5 +507,4 @@ class Lecture(Logger):
                              " concatenation of text chunks!")
         self.log.debug("Started full text assembly.")
         self.text = ' '.join([ch.text for ch in self.chunks])
-        self.log.info("Reference text: %s", self.text)
-
+        self.log.debug("Reference text: %s", self.text)

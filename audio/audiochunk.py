@@ -1,5 +1,5 @@
 #!/usr/bin/python
-from __future__ import division
+
 from recocon.logger import Logger
 # import multiprocessing as m
 import subprocess
@@ -93,7 +93,7 @@ class AudioChunk(Logger):
             self.log.debug("Waiting for termination of recognition process...")
             returncode = pock_cont.wait()
 
-            if returncode != 0:
+            if returncode:
                 self.log.error("Bad exit code from recognition process. "
                                "Exit code: {}".format(returncode))
                 self.log.error(pock_cont.stderr.read())
@@ -118,4 +118,3 @@ class AudioChunk(Logger):
                 raw_text = re.sub(' \(.*', '', raw_text)
                 self.raw_text = raw_text.replace("\n", " ")
         return self.raw_text
-

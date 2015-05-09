@@ -11,6 +11,10 @@ from logger import Logger
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Lecture recognizer module.")
+
+
+
+
     # searcher related options
     searcher = parser.add_argument_group('searcher')
     searcher.add_argument("-k", "--keyword", dest="keyword", required=True,

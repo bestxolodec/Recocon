@@ -17,8 +17,8 @@ from bs4 import UnicodeDammit
 import chardet
 import pymorphy2
 
-# plist = morph.parse(u'стали')
 # morph = pymorphy2.MorphAnalyzer()
+# plist = morph.parse(u'стали')
 
 
 # if less then this threshold then use encoding, declared in html
@@ -87,21 +87,24 @@ class Page(Logger):
     html = None
     text = None
     tokens = None
-    lemmatize = False
+    lemmatize = True
     # morpheme analizer for lemmatizing purposes
     morph = None
     # while lemmatizing, preserve only theese parts of speech
-    allowed_POS = ["NOUN", "VERB", "INFN", "ADJF", "ADJS", "ADVB"]
+    # allowed_POS = ["NOUN", "VERB", "INFN", "ADJF", "ADJS", "ADVB"]
+    allowed_POS = ["NOUN"]
 
     def __init__(self, url, rate=None, descr=None, engine="google",
-                 tokenizer=None, lemmatize=False):
+                 tokenizer=None, lemmatize=None):
         """
         Args:
-            link: typle of (rate, url, description) of a link
+            url: url of a page
             engine:  engine this link comes from
             tokenizer: class that have method `tokenize` and could be called
                 the following way: `tokenizer.tokenize(text)`, where text is
                 string to be tokenized.
+            lemmatize: filter by tag of speech and lemmatize all tokens to
+                infinite forms
         """
         self.log.debug("Url is {!r}".format(url))
         assert url, "Url cannot be empty!"
@@ -113,7 +116,7 @@ class Page(Logger):
         if self.lemmatize:
             self.morph = pymorphy2.MorphAnalyzer()
 
-    def get_list_of_tokens(self, to_lower=True):
+    def get_list_of_tokens(self, to_lower=True, remove_newlines=True):
         """ This function retrieves text from url and prepares it for
         further processing: clean from html tags, nonalpha characters,
         stopwords.
@@ -123,7 +126,7 @@ class Page(Logger):
         """
         if not self.tokens:
             assert self.url, "Wrong url provided!"
-            self.text = self._get_text(remove_newlines=True)
+            self.text = self._get_text(remove_newlines=remove_newlines)
             self.log.debug(u"First 100 characters of text from {url}: {text}"
                            "".format(url=self.url,
                                      text=self.text[:100]))
@@ -133,7 +136,7 @@ class Page(Logger):
                                      tokens=self.tokens))
             if to_lower:
                 # all words to lowercase
-                self.tokens = map(lambda s: s.lower(), self.tokens)
+                self.tokens = list(map(lambda s: s.lower(), self.tokens))
         return self.tokens
 
     def _get_text(self, remove_newlines=True):
@@ -156,7 +159,7 @@ class Page(Logger):
             except requests.exceptions.RequestException as e:
                 self.log.warn("Unable to get page content of the url: {url}. "
                               "The reason: {exc!r}".format(url=url, exc=e))
-                raise ParsingError(e.message)
+                raise ParsingError(e.strerror)
 
             ud = UnicodeDammit(r.content, is_html=True)
 
@@ -177,11 +180,13 @@ class Page(Logger):
             htmlparser = etree.HTMLParser(encoding=enc)
             root = etree.HTML(content, parser=htmlparser)
             etree.strip_elements(root, html.etree.Comment, "script", "style")
-            text = html.tostring(root, method="text", encoding="utf-8")
+            text = html.tostring(root, method="text", encoding="unicode")
 
             if remove_newlines:
+                self.log.debug(str(type(text)))
                 text = re.sub('\s+', ' ', text)
             self.text = text
+
         return self.text
 
     def _get_tokens(self, remove_stopwords=True, remove_words_with_ascii=True,
@@ -203,12 +208,13 @@ class Page(Logger):
 
             # filter by minimal length of a word
             if min_wordlength:
-                with_shortw = filter(lambda s: len(s) <= 2, tokens)
-                tokens = filter(lambda s: len(s) > 2, tokens)
+                with_shortw = filter(lambda s: len(s) <= min_wordlength, tokens)
+                self.log.debug("Removed too short words: {}"
+                               "".format(with_shortw))
+                tokens = filter(lambda s: len(s) > min_wordlength, tokens)
             # filter by stopwords
             if remove_stopwords:
                 sw = stopwords.words(stopword_lang)
-                with_sw = filter(lambda s: s in sw, tokens)
                 tokens = filter(lambda s: s not in sw, tokens)
             # remove words that contains ascii symbols
             if remove_words_with_ascii:
@@ -217,6 +223,8 @@ class Page(Logger):
                 filterre = re.compile(ASCII_RE, re.UNICODE)
                 with_ascii = filter(lambda s: bool(filterre.search(s)), tokens)
                 tokens = filter(lambda s: not bool(filterre.search(s)), tokens)
+                self.log.debug("Removed ASCII words: {}"
+                               "".format(with_ascii))
             if self.lemmatize:
                 lemm_tokens = []
                 for t in tokens:
@@ -224,6 +232,8 @@ class Page(Logger):
                     p = self.morph.parse(t)[0]
                     # only some of the POS are allowed
                     if p.tag.POS not in self.allowed_POS:
+                        self.log.debug("Removing because of part of speech: {}"
+                                       "".format(t))
                         continue
                     lemm_tokens.append(p.normal_form)
                 tokens = lemm_tokens
