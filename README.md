@@ -43,7 +43,7 @@ Steps to get things ready:
 Steps to get things ready:
   * install development packages
     ```
-    apt-get install python-dev libxml2-dev libxslt1-dev  python-dev python3-dev libxml2-dev  zlib1g-dev lib32z1-dev chromium-browser   python-ipdb  build-essential cmake libblas-dev liblapack-dev gfortran python-openssl libffi-dev libssl-dev libxml2 gcc automake autoconf libtool bison swig gcc automake autoconf libtool bison swig atop sox lrzip libav-tools  gfortrank
+    apt-get install python-dev libxml2-dev libxslt1-dev  python-dev python3-dev libxml2-dev  zlib1g-dev lib32z1-dev chromium-browser   python-ipdb  build-essential cmake libblas-dev liblapack-dev gfortran python-openssl libffi-dev libssl-dev libxml2 gcc automake autoconf libtool bison swig gcc automake autoconf libtool bison swig atop sox lrzip libav-tools libfreetype6-dev
     ```
   * install python packages inside a vritaulenv
   ```
