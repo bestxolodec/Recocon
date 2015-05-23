@@ -1,9 +1,14 @@
 #!/usr/bin/python
 
-from recocon.logger import Logger
 # import multiprocessing as m
 import subprocess
 import re
+import pymorphy2
+
+from recocon.logger import Logger
+
+# prepare morh object
+morph = pymorphy2.MorphAnalyzer()
 
 
 class AudioChunk(Logger):
@@ -45,16 +50,18 @@ class AudioChunk(Logger):
         self.ctl_filepath = ctl_filepath
         self.outputfile = outputfile
         self.raw_text = None
+        # raw text in normal forms
+        self.lemm_text = None
 
-    def _get_decoder_cmd(self):
-        ''' Constructs  decoder command according to attr `self.decoder` '''
+    def _get_decoder_cmd(self, remove_noise=True):
+        """ Constructs  decoder command according to attr `self.decoder` """
         assert self.decoder, "No decoder option passed!"
-        if self.decoder == 'pocketsphinx_continuous':
-            cmd = [str(x) for x in [self.decoder, '-samprate',
-                                    self.framerate, '-lm', self.lm, '-dict',
-                                    self.dct, '-hmm', self.hmm, '-infile',
+        if self.decoder == "pocketsphinx_continuous":
+            cmd = [str(x) for x in [self.decoder, "-samprate",
+                                    self.framerate, "-lm", self.lm, "-dict",
+                                    self.dct, "-hmm", self.hmm, "-infile",
                                     self.filepath]]
-        if self.decoder == 'pocketsphinx_batch':
+        if self.decoder == "pocketsphinx_batch":
             """
             pocketsphinx_batch \
                 -samprate 8000 \
@@ -64,21 +71,24 @@ class AudioChunk(Logger):
                 -hmm n/zero_ru_cont_8k_v2/zero_ru.cd_semi_4000 \
                 -cepext .wav \
                 -cepdir / \
-                -ctl /tmp/bla
+                -ctl /tmp/bla \
+                -remove_noise yes
             """
             # cut extension of audio files
-            filepathsplit = self.filepath.split('.')
+            filepathsplit = self.filepath.split(".")
             ext = "." + filepathsplit[-1]
             filepath_withoutext = ".".join(filepathsplit[:-1])
             # write out control file with list of audio files to process
-            with open(self.ctl_filepath, 'wt') as ctl:
+            with open(self.ctl_filepath, "wt") as ctl:
                 ctl.write(filepath_withoutext)
-            cmd = [str(x) for x in [self.decoder, '-samprate', self.framerate,
-                                    '-adcin', 'yes', '-lm', self.lm, '-dict',
-                                    self.dct, '-hmm', self.hmm, '-cepext',
-                                    ext, '-cepdir', '/', '-ctl',
-                                    self.ctl_filepath, '-hyp',
+            cmd = [str(x) for x in [self.decoder, "-samprate", self.framerate,
+                                    "-adcin", "yes", "-lm", self.lm, "-dict",
+                                    self.dct, "-hmm", self.hmm, "-cepext",
+                                    ext, "-cepdir", "/", "-ctl",
+                                    self.ctl_filepath, "-hyp",
                                     self.outputfile]]
+        if remove_noise:
+            cmd.extend(("-remove_noise", "yes"))
         return cmd
 
     @property
@@ -93,28 +103,39 @@ class AudioChunk(Logger):
             self.log.debug("Waiting for termination of recognition process...")
             returncode = pock_cont.wait()
 
+            self.log.debug("Returncode is {} of type {}"
+                           "".format(returncode, type(returncode)))
             if returncode:
                 self.log.error("Bad exit code from recognition process. "
                                "Exit code: {}".format(returncode))
                 self.log.error(pock_cont.stderr.read())
                 # FIXME: decide if following is useful
                 # raise Exception("Recognition error: non null exit code")
-            self.log.info("Recognition completed. Stderror follows:")
-            self.log.info(pock_cont.stderr.read())
+            self.log.info("Recognition completed.")
             # get only the meaningful part of a recognition data
             # depending on a type of decoder
-            if self.decoder == 'pocketsphinx_continuous':
-                reg = '\d+: (?P<text>.*)'
+            if self.decoder == "pocketsphinx_continuous":
+                reg = "\d+: (?P<text>.*)"
                 lines = pock_cont.stdout.read().splitlines()
                 try:
-                    self.raw_text = ' '.join([re.search(reg, line).group('text')
+                    self.raw_text = " ".join([re.search(reg, line).group("text")
                                               for line in lines])
                 except AttributeError:
                     self.log.error("There was an error while parsing results"
                                    " from decoder.See raw result %s", lines)
-            if self.decoder == 'pocketsphinx_batch':
-                raw_text = open(self.outputfile, 'rt').read()
+            if self.decoder == "pocketsphinx_batch":
+                raw_text = open(self.outputfile, "rt").read()
                 # delete final () construction from decoder output
-                raw_text = re.sub(' \(.*', '', raw_text)
+                raw_text = re.sub(" \(.*", "", raw_text)
                 self.raw_text = raw_text.replace("\n", " ")
         return self.raw_text
+
+    @property
+    def lemmatized_text(self):
+        if self.lemm_text:
+            return self.lemm_text
+        lemmatized_text = []
+        for word in self.text.split():
+            lemmatized_text.append(morph.parse(word)[0].normal_form)
+        self.lemm_text = lemmatized_text
+        return self.lemm_text

@@ -1,21 +1,25 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+import os
+import re
+import pickle
+
 from lxml import html
 from lxml.html import etree
+from bs4 import UnicodeDammit
+import chardet
+
 import requests
-import re
+
 from nltk.stem import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
 from nltk.corpus import stopwords
-from logger import Logger
-import pickle
-import os
-from gensim import corpora
-# , models, similarities
-from bs4 import UnicodeDammit
-import chardet
 import pymorphy2
+
+from gensim import corpora
+
+from logger import Logger
 
 # morph = pymorphy2.MorphAnalyzer()
 # plist = morph.parse(u'стали')

@@ -109,7 +109,7 @@ class Lecture(Logger):
     def plot_params(self, filepath=None, min_length_secs=5, samplesize=10,
                     min_speech_samples=5, min_silence_samples=30,
                     n_of_startsilence_samples=30,
-                    energy_threshold_of_signal_presence=3):
+                    energy_threshold_of_signal_presence=3, plot_params=False):
         assert self.audio, ("There is no Audio object associated "
                             "with {}. Maybe you should call video_to_audio "
                             "first".format(self.video_filepath))
@@ -141,10 +141,11 @@ class Lecture(Logger):
         min_energy = None
         min_freq = None
         min_spectr = None
-        plt_energy = np.zeros(number_of_samples, np.float)
-        plt_freq = np.zeros(number_of_samples, np.float)
-        plt_spectr = np.zeros(number_of_samples, np.float)
-        plt_min_energy = np.zeros(number_of_samples, np.float)
+        if plot_params:
+            plt_energy = np.zeros(number_of_samples, np.float)
+            plt_freq = np.zeros(number_of_samples, np.float)
+            plt_spectr = np.zeros(number_of_samples, np.float)
+            plt_min_energy = np.zeros(number_of_samples, np.float)
         # skip all samples from the begining of  data which contain only zeros
         sample_number = 0
         sample = self.audio.signal[frames_per_sample * sample_number:
@@ -189,10 +190,11 @@ class Lecture(Logger):
                                          sample.get_spectral_flatness()))
             # within every loop remember what energy, freq and spectr
             # of a sample was
-            plt_energy[sample_number] = sample.get_energy()
-            plt_freq[sample_number] = sample.get_dominant_freq()
-            plt_spectr[sample_number] = sample.get_spectral_flatness()
-            plt_min_energy[sample_number] = min_energy
+            if plot_params:
+                plt_energy[sample_number] = sample.get_energy()
+                plt_freq[sample_number] = sample.get_dominant_freq()
+                plt_spectr[sample_number] = sample.get_spectral_flatness()
+                plt_min_energy[sample_number] = min_energy
 
         # set decision threshold
         self.log.debug("min_energy: %r", min_energy)
@@ -211,9 +213,10 @@ class Lecture(Logger):
             sample = Audio(framerate=self.audio.framerate, signal=sample)
             # within every loop remember what was energy, freq and spectr
             # of a sample
-            plt_energy[sample_number] = sample.get_energy()
-            plt_freq[sample_number] = sample.get_dominant_freq()
-            plt_spectr[sample_number] = sample.get_spectral_flatness()
+            if plot_params:
+                plt_energy[sample_number] = sample.get_energy()
+                plt_freq[sample_number] = sample.get_dominant_freq()
+                plt_spectr[sample_number] = sample.get_spectral_flatness()
             if sample.get_energy() < energy_threshold_of_signal_presence:
                 continue
             self.log.debug("Processing sample_number {}. Start: {}. End: {}"
@@ -268,34 +271,36 @@ class Lecture(Logger):
                 # speech sample
                 speech_mask[sample_number] = True
 
-            plt_min_energy[sample_number] = min_energy
+            if plot_params:
+                plt_min_energy[sample_number] = min_energy
 
-        xaxis = np.arange(number_of_samples) * frames_per_sample
-        plt.subplot(411)
-        plt.plot(xaxis, plt_energy)
-        plt.plot(xaxis, energy_decision * np.max(plt_energy))
-        plt.title("Energies of samples")
-        plt.subplot(412)
-        plt.plot(xaxis, plt_freq)
-        plt.plot(xaxis, frequency_decision * np.max(plt_freq))
-        plt.title("Frequencies of samples")
-        plt.subplot(413)
-        plt.plot(xaxis, plt_spectr)
-        plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
-        plt.title("Spectral flatness koefficients of samples")
-        plt.subplot(414)
-        plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
-        plt.title("Signal")
-        # plt.show()
+        if plot_params:
+            xaxis = np.arange(number_of_samples) * frames_per_sample
+            plt.subplot(411)
+            plt.plot(xaxis, plt_energy)
+            plt.plot(xaxis, energy_decision * np.max(plt_energy))
+            plt.title("Energies of samples")
+            plt.subplot(412)
+            plt.plot(xaxis, plt_freq)
+            plt.plot(xaxis, frequency_decision * np.max(plt_freq))
+            plt.title("Frequencies of samples")
+            plt.subplot(413)
+            plt.plot(xaxis, plt_spectr)
+            plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
+            plt.title("Spectral flatness koefficients of samples")
+            plt.subplot(414)
+            plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
+            plt.title("Signal")
+            plt.show()
 
-        plt.subplot(211)
-        plt.plot(xaxis, plt_spectr)
-        plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
-        plt.title("Spectral flatness koefficients of samples")
-        plt.subplot(212)
-        plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
-        plt.title("Signal")
-        # plt.show()
+            plt.subplot(211)
+            plt.plot(xaxis, plt_spectr)
+            plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
+            plt.title("Spectral flatness koefficients of samples")
+            plt.subplot(212)
+            plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
+            plt.title("Signal")
+            plt.show()
 
         # TODO: experiment
         def movingaverage(values, window):
@@ -303,31 +308,32 @@ class Lecture(Logger):
             sma = np.convolve(values, weights, 'valid')
             return sma
 
-        plt.subplot(411)
-        plt.plot(xaxis, plt_spectr)
-        # plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
-        plt.title("Spectral flatness koefficients of samples")
-        plt.subplot(412)
-        plt.plot(xaxis, plt_spectr - min_spectr)
-        plt.plot(xaxis, np.ones(xaxis.shape) * thr_spectr)
-        plt.title("Threshold of spectral flatness")
-        plt.subplot(413)
-        sma = movingaverage(plt_spectr - min_spectr, 2 * min_silence_samples)
-        sma = np.r_[[0] * (2 * min_silence_samples-1), sma]
-        plt.plot(xaxis, sma)
-        plt.plot(xaxis, np.ones(xaxis.shape) * thr_spectr)
-        plt.title("Threshold of spectral flatness averaged")
-        plt.subplot(414)
-        plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
-        plt.title("Signal")
-        # plt.show()
+        if plot_params:
+            plt.subplot(411)
+            plt.plot(xaxis, plt_spectr)
+            # plt.plot(xaxis, spectr_decision * np.max(plt_spectr))
+            plt.title("Spectral flatness koefficients of samples")
+            plt.subplot(412)
+            plt.plot(xaxis, plt_spectr - min_spectr)
+            plt.plot(xaxis, np.ones(xaxis.shape) * thr_spectr)
+            plt.title("Threshold of spectral flatness")
+            plt.subplot(413)
+            sma = movingaverage(plt_spectr - min_spectr, 2 * min_silence_samples)
+            sma = np.r_[[0] * (2 * min_silence_samples-1), sma]
+            plt.plot(xaxis, sma)
+            plt.plot(xaxis, np.ones(xaxis.shape) * thr_spectr)
+            plt.title("Threshold of spectral flatness averaged")
+            plt.subplot(414)
+            plt.plot(self.audio.signal[0: number_of_samples * frames_per_sample])
+            plt.title("Signal")
+            plt.show()
 
-        # import ipdb; ipdb.set_trace()
-        # plt.plot(xaxis, plt_energy)
-        # plt.plot(xaxis, energy_decision * np.max(plt_energy))
-        # plt.plot(xaxis, plt_min_energy)
-        # plt.title("Energies of samples")
-        # plt.show()
+            # import ipdb; ipdb.set_trace()
+            # plt.plot(xaxis, plt_energy)
+            # plt.plot(xaxis, energy_decision * np.max(plt_energy))
+            # plt.plot(xaxis, plt_min_energy)
+            # plt.title("Energies of samples")
+            # plt.show()
 
         # We need to ignore silence, that is running less then 30 samples
         # (300ms = 0.3s) and ignore speech that is running less then 10 samles
@@ -431,8 +437,9 @@ class Lecture(Logger):
         speech_offset = silence_offset
 
         # graph real edges
-        plt_actual_start_of_chunk = []
-        plt_actual_end_of_chunk = []
+        if plot_params:
+            plt_actual_start_of_chunk = []
+            plt_actual_end_of_chunk = []
 
         old_s = None
         # set counter for naming wav chunks
@@ -456,8 +463,9 @@ class Lecture(Logger):
                 chunks_filepath = self.chunks_filepath.format(counter)
                 self.audio.normalize_signal(s=s, e=e)
                 self.audio.write_to_file(chunks_filepath, start=s, end=e)
-                plt_actual_start_of_chunk.append(s)
-                plt_actual_end_of_chunk.append(e)
+                if plot_params:
+                    plt_actual_start_of_chunk.append(s)
+                    plt_actual_end_of_chunk.append(e)
                 # keep track of all chunks we have added
                 self.chunks.append(AudioChunk(s, e, self.audio.framerate,
                                               filepath=chunks_filepath,
@@ -484,23 +492,24 @@ class Lecture(Logger):
             plt_actual_start_of_chunk.append(s)
             plt_actual_end_of_chunk.append(e)
 
-        xaxis = np.arange(n_of_frames)
-        plt.subplot(311)
-        plt.plot(xaxis, self.audio.signal[0: n_of_frames])
-        plt.vlines(start * frames_per_sample, -32768, 32768, colors='r')
-        plt.vlines(end * frames_per_sample, -32768, 32768, colors='g')
-        plt.title("Initial split")
-        plt.subplot(312)
-        plt.plot(xaxis, self.audio.signal[0: n_of_frames])
-        plt.vlines(start_of_speech, -32768, 32768, colors='r')
-        plt.vlines(sil_start, -32768, 32768, colors='g')
-        plt.title("Masked split")
-        plt.subplot(313)
-        plt.plot(xaxis, self.audio.signal[0: n_of_frames])
-        plt.vlines(plt_actual_start_of_chunk, -32768, 32768, colors='r')
-        plt.vlines(plt_actual_end_of_chunk, -32768, 32768, colors='g')
-        plt.title("Actual split")
-        # plt.show()
+        if plot_params:
+            xaxis = np.arange(n_of_frames)
+            plt.subplot(311)
+            plt.plot(xaxis, self.audio.signal[0: n_of_frames])
+            plt.vlines(start * frames_per_sample, -32768, 32768, colors='r')
+            plt.vlines(end * frames_per_sample, -32768, 32768, colors='g')
+            plt.title("Initial split")
+            plt.subplot(312)
+            plt.plot(xaxis, self.audio.signal[0: n_of_frames])
+            plt.vlines(start_of_speech, -32768, 32768, colors='r')
+            plt.vlines(sil_start, -32768, 32768, colors='g')
+            plt.title("Masked split")
+            plt.subplot(313)
+            plt.plot(xaxis, self.audio.signal[0: n_of_frames])
+            plt.vlines(plt_actual_start_of_chunk, -32768, 32768, colors='r')
+            plt.vlines(plt_actual_end_of_chunk, -32768, 32768, colors='g')
+            plt.title("Actual split")
+            plt.show()
 
     def get_full_text(self):
         assert self.chunks, ("There are no available chunks to perform"

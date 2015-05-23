@@ -78,7 +78,8 @@ class Searcher(Logger):
         self.driver.get(self.search_locations[self.search_engine])
         typ, sel = self.input_field_selectors[self.search_engine]
         search_box = self.driver.find_element(by=typ, value=sel)
-        search_box.send_keys(self.keyword)
+        sleep_rand()
+        search_box.send_keys(self.keyword + "\n")
         sleep_rand()
         # for debug purposes:
         """
@@ -135,3 +136,8 @@ class Searcher(Logger):
                        "".format(links))
         return links
 
+    def exit(self):
+        """ Method to clean up and close browser."""
+        if self.driver:
+            self.driver.close()
+            self.driver = None

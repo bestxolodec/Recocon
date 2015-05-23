@@ -1,5 +1,5 @@
 #!/usr/bin/env python
- encoding: utf-8
+# encoding: utf-8
 
 import os
 parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +13,7 @@ from recocon.searcher.searcher import Searcher
 
 import pymorphy2
 morph = pymorphy2.MorphAnalyzer()
+
 
 if __name__ == "__main__":
 
@@ -102,14 +103,16 @@ if __name__ == "__main__":
     g = Searcher(args.keyword, engine=args.engine,
                  number_of_links=args.number_of_links)
     links = g.get_links()
+    # close browser
+    g.exit()
 
     # prepare collections of texts
     urls = [l[1] for l in links]
-    c =  Collection(urls)
+    c = Collection(urls)
     texts = c.get_tokenized_texts()
 
-    # FIXME: this functionality should be in separete module
-    from gensim import  corpora, models
+    # FIXME: this functionality should be in separate module
+    from gensim import corpora, models
     # load model that was already created in offline
     lda = models.LdaModel.load("./models/lda_on_bow")
     wiki_corpus = corpora.MmCorpus("./models/_bow.mm")
@@ -125,14 +128,10 @@ if __name__ == "__main__":
     # `topics` is a list of tuples: (topicno, probability)
     topics = sorted((lda[doc2bow]), key=lambda x: x[1], reverse=True)
     n_best = 5
-    for num, prob  in topics[:n_best]:
-        print( "Probability:{}, topicno: {}, words: {}\n"
-              "".format(prob, num, lda.print_topic(num, topn=100)))
-    lda.show_topic(num, topn=10)
-
-    # Return a list of `(words_probability, word)`
-    # 2-tuples for the most probable words in topic `topicid`.
-    lda.show_topic(91)
+    topn = 30
+    for num, prob in topics[:n_best]:
+        print("Probability:{}, topicno: {}, words: {}\n"
+              "".format(prob, num, lda.print_topic(num, topn=topn)))
 
     # find seconds in what
     # FIXME: awful for's. Thinks about
@@ -141,10 +140,43 @@ if __name__ == "__main__":
     for ch in lect.chunks:
         for word in ch.text.split():
             lemma = morph.parse(word)[0].normal_form
-            for num, prob  in topics[:n_best]:
-                for topic_w_prob, topic_word in  lda.show_topic(num):
+            for num, prob in topics[:n_best]:
+                for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
                     if lemma == topic_word:
-                        print(ch.start)
+                        print("Topic word **{}** matched audio {}-{}"
+                              "".format(lemma.upper(), ch.start, ch.end))
+                        print("\tTop words of this topic: ```{}```"
+                              "".format(list(map(lambda x: x[1],
+                                                 lda.show_topic(num)))))
 
+    # make attempt to perform query to LDA model using recognized text from
+    # video
+    recogn_texts = []
+    for word in lect.text.split():
+        p = morph.parse(word)[0]
+        if p.tag.POS == 'NOUN':
+            recogn_texts.append(p.normal_form)
+    doc2bow = id2word.doc2bow(recogn_texts)
+    topics = sorted((lda[doc2bow]), key=lambda x: x[1], reverse=True)
+    # show TOP 5 topics using LDA on recognized text
+    n_best = 5
+    topn = 30
+    for num, prob in topics[:n_best]:
+        print("Using text from recognition. Probability:{}, topicno: {}, "
+              "words: {}\n".format(prob, num, lda.print_topic(num, topn=topn)))
 
-
+    # find seconds in what
+    # FIXME: awful for's. Thinks about
+    #   1. Counting words in dics
+    #   2. lemmatizing this search phase
+    for ch in lect.chunks:
+        for word in ch.text.split():
+            lemma = morph.parse(word)[0].normal_form
+            for num, prob in topics[:n_best]:
+                for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
+                    if lemma == topic_word:
+                        print("Topic word **{}** matched audio {}-{}"
+                              "".format(lemma.upper(), ch.start, ch.end))
+                        print("\tTop words of this topic: ```{}```"
+                              "".format(list(map(lambda x: x[1],
+                                                 lda.show_topic(num)))))
