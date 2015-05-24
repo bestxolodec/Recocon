@@ -42,10 +42,12 @@ Steps to get things ready:
 
 Steps to get things ready:
   * install development packages
+
     ```
-    apt-get install python-dev libxml2-dev libxslt1-dev  python-dev python3-dev libxml2-dev  zlib1g-dev lib32z1-dev chromium-browser   python-ipdb  build-essential cmake libblas-dev liblapack-dev gfortran python-openssl libffi-dev libssl-dev libxml2 gcc automake autoconf libtool bison swig gcc automake autoconf libtool bison swig atop sox lrzip libav-tools libfreetype6-dev
+    apt-get install python-dev libxml2-dev libxslt1-dev  python-dev python3-dev libxml2-dev  zlib1g-dev lib32z1-dev chromium-browser   python-ipdb  build-essential cmake libblas-dev liblapack-dev gfortran python-openssl libffi-dev libssl-dev libxml2 gcc automake autoconf libtool bison swig gcc automake autoconf libtool bison swig atop sox lrzip libav-tools libfreetype6-dev python-virtualenv python3-pip
     ```
   * install python packages inside a vritaulenv
+
   ```
   beautifulsoup4 (4.3.2)
   boto (2.38.0)
