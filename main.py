@@ -228,19 +228,31 @@ if __name__ == "__main__":
     top_nearest = sorted(resources, key=lambda x:
                          resources[x]['similarity'])[:top_n_nearest]
 
+    # prepare query to tfidf model - sparse list of features of
+    # flattened representation of the nearest set of texts grabbed from the
+    # internet
+    texts_scraped_nearest = [texts[t] for t in top_nearest]
+    texts_scraped_nearest_flat = [word for text in texts_scraped_nearest
+                             for word in text]
+    doc2bow_scraped_nearest_flat = id2word.doc2bow(texts_scraped_nearest_flat)
+
+    # prepare recogn_texts - include only normal forms of nouns
     recogn_texts = filter(POS_filter, lect.text.split())
     recogn_texts = map(normal_form, recogn_texts)
     doc2bow = id2word.doc2bow(recogn_texts)
 
-    # build tfidf model for all scraped texts
+    # build tfidf models for all scraped texts
     tfidf_scraped = models.TfidfModel(corpus_scraped, id2word=id2word)
     corpus_scraped_nearest = [corpus_scraped[t] for t in top_nearest]
     tfidf_scraped_nearest = models.TfidfModel(corpus_scraped_nearest,
                                               id2word=id2word)
 
+
     res_tfidf_wiki = tfidf_wiki[doc2bow]
     res_tfidf_scraped = tfidf_scraped[doc2bow]
     res_tfidf_scraped_nearest = tfidf_scraped_nearest[doc2bow]
+    # tfidf of all corpus_scraped_nearest on the wiki tfidf model
+    res_tfidf_wiki_on_scraped_nearest = tfidf_wiki[doc2bow_scraped_nearest_flat]
 
     for num, prob in sorted(res_tfidf_wiki, key=lambda x: x[1], reverse=True)[:20]:
             print(prob, id2word[num])
@@ -250,3 +262,60 @@ if __name__ == "__main__":
 
     for num, prob in sorted(res_tfidf_scraped_nearest, key=lambda x: x[1], reverse=True)[:20]:
             print(prob, id2word[num])
+
+    for num, prob in sorted(res_tfidf_wiki_on_scraped_nearest,
+                            key=lambda x: x[1], reverse=True)[:20]:
+            print(prob, id2word[num])
+
+
+    # for convenience convert to dict
+    res_tfidf_scraped_nearest = dict(res_tfidf_scraped_nearest)
+    # merged list of tags
+    res_merged = []
+    for k, v in res_tfidf_wiki:
+        v_scraped_nearest = res_tfidf_scraped_nearest.get(k, 0)
+        res_merged.append((k, max(v, v_scraped_nearest)))
+
+    # print merged results
+    for num, prob in sorted(res_merged, key=lambda x: x[1], reverse=True)[:20]:
+            print(prob, id2word[num])
+
+    # TRY TO FIGURE OUT TAGS FOR TEXT BASED ON SCRAPED RESULTS
+    # find seconds in what
+    # FIXME: awful for's. Thinks about
+    #   1. Counting words in dics
+    #   2. lemmatizing this search phase
+
+
+    top_n = 50
+    res_merget_top_list = sorted(res_merged, key=lambda x: x[1],
+                                 reverse=True)[:top_n]
+    res_merged_top_set = set(map(lambda x: id2word[x[0]], res_merget_top_list))
+    for ch in lect.chunks:
+        chunk_text = set(map(normal_form, filter(POS_filter, ch.text.split())))
+        intersection = chunk_text & res_merged_top_set
+        if intersection:
+            print("Audio {}-{}s list matched tags: **{}**"
+                    "".format(ch.start, ch.end, ", ".join(intersection)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
