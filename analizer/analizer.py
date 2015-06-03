@@ -360,6 +360,8 @@ class Collection(Logger):
                 except ParsingError:
                     self.log.warn(u"Failed to get tokens from text of url "
                                   "{url}. Skipping it.".format(url=p.url))
+                    # preserve indexing for backward restoring possibility
+                    self.texts.append([])
                     continue
                 self.texts.append(tokens)
 

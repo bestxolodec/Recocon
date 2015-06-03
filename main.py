@@ -70,13 +70,13 @@ if __name__ == "__main__":
     # analizer related options
     # analizer = parser.add_argument_group('analizer')
     # analizer.add_argument("-k", "--keyword", dest="keyword", required=True,
-                          # help="Sentence to search on the web")
+    #                       help="Sentence to search on the web")
     # analizer.add_argument("-e", "--engine", dest="engine", type=str,
-                          # help="Engine to use for searching."
-                          # " Defaults to google ",  default="google")
+    #                       help="Engine to use for searching."
+    #                       " Defaults to google ",  default="google")
     # analizer.add_argument("-l", "--num-links", dest="number_of_links",
-                          # help="Number of links to return. "
-                          # "Defaults to 20",  default=20, type=int)
+    #                       help="Number of links to return. "
+    #                       "Defaults to 20",  default=20, type=int)
 
     args = parser.parse_args()
 
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         lect.video_to_audio(framerate=args.framerate, bitrate="256k")
 
     # lect.silence_split()
-    # TODO: rename functino name to silence split
+    # TODO: rename function name to silence split
     lect.plot_params()
 
     # pickle results for further purposes
@@ -111,21 +111,25 @@ if __name__ == "__main__":
     c = Collection(urls)
     texts = c.get_tokenized_texts()
 
-    # FIXME: this functionality should be in separate module
+    # FIXME: the folowing functionality should be in separate module
     from gensim import corpora, models
     # load model that was already created in offline
     lda = models.LdaModel.load("./models/lda_on_bow")
-    wiki_corpus = corpora.MmCorpus("./models/_bow.mm")
+    tfidf_wiki = models.TfidfModel.load("./models/origin.tfidf_model")
+    corpus_wiki = corpora.MmCorpus("./models/_bow.mm")
+    id2word = corpora.Dictionary.load_from_text("./models/"
+                                                "_wordids_stripped.txt")
 
-    # create single documents from all grabbed webpages
-    all_texts = [word for text in texts for word in text]
-    id2word = corpora.Dictionary.load_from_text("./models/_wordids_stripped.txt")
-    # corpus is sparse vector of features
-    corpus = [id2word.doc2bow(text) for text in texts]
-    all_corpus = id2word.doc2bow(all_texts)
+    # create single documents from all scraped webpages
+    texts_flat = [word for text in texts for word in text]
+    corpus_scraped_flat = id2word.doc2bow(texts_flat)
+    corpus_scraped = [id2word.doc2bow(text) for text in texts]
+    doc2bow = id2word.doc2bow(texts_flat)
 
-    doc2bow = id2word.doc2bow(all_texts)
+
     # `topics` is a list of tuples: (topicno, probability)
+    # lda[doc2bow] infers only those of topics which have probability
+    # more then 0.01
     topics = sorted((lda[doc2bow]), key=lambda x: x[1], reverse=True)
     n_best = 5
     topn = 30
@@ -133,50 +137,116 @@ if __name__ == "__main__":
         print("Probability:{}, topicno: {}, words: {}\n"
               "".format(prob, num, lda.print_topic(num, topn=topn)))
 
-    # find seconds in what
-    # FIXME: awful for's. Thinks about
-    #   1. Counting words in dics
-    #   2. lemmatizing this search phase
-    for ch in lect.chunks:
-        for word in ch.text.split():
-            lemma = morph.parse(word)[0].normal_form
-            for num, prob in topics[:n_best]:
-                for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
-                    if lemma == topic_word:
-                        print("Topic word **{}** matched audio {}-{}"
-                              "".format(lemma.upper(), ch.start, ch.end))
-                        print("\tTop words of this topic: ```{}```"
-                              "".format(list(map(lambda x: x[1],
-                                                 lda.show_topic(num)))))
+    def normal_form(word):
+        return morph.parse(word)[0].normal_form
 
-    # make attempt to perform query to LDA model using recognized text from
-    # video
-    recogn_texts = []
-    for word in lect.text.split():
+    def POS_filter(word, pos_list=['NOUN']):
         p = morph.parse(word)[0]
-        if p.tag.POS == 'NOUN':
-            recogn_texts.append(p.normal_form)
-    doc2bow = id2word.doc2bow(recogn_texts)
-    topics = sorted((lda[doc2bow]), key=lambda x: x[1], reverse=True)
-    # show TOP 5 topics using LDA on recognized text
-    n_best = 5
-    topn = 30
-    for num, prob in topics[:n_best]:
-        print("Using text from recognition. Probability:{}, topicno: {}, "
-              "words: {}\n".format(prob, num, lda.print_topic(num, topn=topn)))
+        if p.tag.POS in pos_list:
+            return True
+        else:
+            return False
 
-    # find seconds in what
-    # FIXME: awful for's. Thinks about
-    #   1. Counting words in dics
-    #   2. lemmatizing this search phase
-    for ch in lect.chunks:
-        for word in ch.text.split():
-            lemma = morph.parse(word)[0].normal_form
-            for num, prob in topics[:n_best]:
-                for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
-                    if lemma == topic_word:
-                        print("Topic word **{}** matched audio {}-{}"
-                              "".format(lemma.upper(), ch.start, ch.end))
-                        print("\tTop words of this topic: ```{}```"
-                              "".format(list(map(lambda x: x[1],
-                                                 lda.show_topic(num)))))
+    # # TRY TO FIGURE OUT TAGS FOR TEXT BASED ON SCRAPED RESULTS
+    # # find seconds in what
+    # # FIXME: awful for's. Thinks about
+    # #   1. Counting words in dics
+    # #   2. lemmatizing this search phase
+    # for ch in lect.chunks:
+    #     for word in ch.text.split():
+    #         lemma = normal_form(word)
+    #         for num, prob in topics[:n_best]:
+    #             for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
+    #                 if lemma == topic_word:
+    #                     print("Topic word **{}** matched audio {}-{}"
+    #                           "".format(lemma.upper(), ch.start, ch.end))
+    #                     print("\tTop words of this topic: ```{}```"
+    #                           "".format(list(map(lambda x: x[1],
+    #                                              lda.show_topic(num)))))
+
+    # # make attempt to perform query to LDA model using recognized text from
+    # # video
+    # recogn_texts = filter(POS_filter, lect.text.split())
+    # recogn_texts = map(normal_form, recogn_texts)
+
+    # doc2bow = id2word.doc2bow(recogn_texts)
+    # topics = sorted((lda[doc2bow]), key=lambda x: x[1], reverse=True)
+    # # show TOP 5 topics using LDA on recognized text
+    # n_best = 5
+    # topn = 30
+    # for num, prob in topics[:n_best]:
+    #     print("Using text from recognition. Probability:{}, topicno: {}, "
+    #           "words: {}\n".format(prob, num, lda.print_topic(num, topn=topn)))
+
+    # # find seconds in what
+    # # FIXME: awful for's. Think about
+    # #   1. Counting words in dics
+    # #   2. lemmatizing this search phase
+    # for ch in lect.chunks:
+    #     for word in ch.text.split():
+    #         lemma = morph.parse(word)[0].normal_form
+    #         for num, prob in topics[:n_best]:
+    #             for topic_w_prob, topic_word in lda.show_topic(num, topn=10):
+    #                 if lemma == topic_word:
+    #                     print("Topic word **{}** matched audio {}-{}"
+    #                           "".format(lemma.upper(), ch.start, ch.end))
+    #                     print("\tTop words of this topic: ```{}```"
+    #                           "".format(list(map(lambda x: x[1],
+    #                                              lda.show_topic(num)))))
+
+    # FIXME: decide what value is appropriate here
+    top_n_nearest = len(corpus_scraped) // 4
+    # doc2bow is representation of recognized text
+    # basis is a list of mappings (topicno, probability)
+    basis = lda.__getitem__(doc2bow, eps=0)
+    basis = dict(basis)
+
+    # fill in dict of all information about resources we processed
+    resources = dict()
+    # numerical order of links (resources)
+    # rank link description
+    for key, (r, l, d) in enumerate(links):
+        resources[key] = {'link': l, 'rank': r, 'description': d,
+                          'tokens': texts[key]}
+
+    def abs_similarity(basis, doc):
+        abs_sim = 0
+        if len(doc) == 0:
+            # 2 stands for maximal abs similarity between two distributions
+            return 2
+        for num, prob in doc.items():
+            basis_prob = basis[num]
+            # print("abs_sim += abs({} - {}) = {}".format(basis_prob, prob,
+            #                                        basis_prob - prob))
+            abs_sim += abs(basis_prob - prob)
+        return abs_sim
+
+    for key, c in enumerate(corpus_scraped):
+        c = dict(lda[c])
+        resources[key]['similarity'] = abs_similarity(basis, c)
+
+    top_nearest = sorted(resources, key=lambda x:
+                         resources[x]['similarity'])[:top_n_nearest]
+
+    recogn_texts = filter(POS_filter, lect.text.split())
+    recogn_texts = map(normal_form, recogn_texts)
+    doc2bow = id2word.doc2bow(recogn_texts)
+
+    # build tfidf model for all scraped texts
+    tfidf_scraped = models.TfidfModel(corpus_scraped, id2word=id2word)
+    corpus_scraped_nearest = [corpus_scraped[t] for t in top_nearest]
+    tfidf_scraped_nearest = models.TfidfModel(corpus_scraped_nearest,
+                                              id2word=id2word)
+
+    res_tfidf_wiki = tfidf_wiki[doc2bow]
+    res_tfidf_scraped = tfidf_scraped[doc2bow]
+    res_tfidf_scraped_nearest = tfidf_scraped_nearest[doc2bow]
+
+    for num, prob in sorted(res_tfidf_wiki, key=lambda x: x[1], reverse=True)[:20]:
+            print(prob, id2word[num])
+
+    for num, prob in sorted(res_tfidf_scraped, key=lambda x: x[1], reverse=True)[:20]:
+            print(prob, id2word[num])
+
+    for num, prob in sorted(res_tfidf_scraped_nearest, key=lambda x: x[1], reverse=True)[:20]:
+            print(prob, id2word[num])
